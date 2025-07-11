@@ -3,6 +3,7 @@ package com.filetransfer;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import org.bson.Document;
+import org.mindrot.jbcrypt.BCrypt;
 
 import java.io.*;
 import java.net.Socket;
@@ -21,7 +22,7 @@ public class client {
         ) {
             System.out.print("Do you want to (1) Login or (2) Signup? Enter 1 or 2: ");
             int choice = sc.nextInt();
-            sc.nextLine(); // consume newline
+            sc.nextLine();
 
             System.out.print("Enter username: ");
             String username = sc.nextLine();
@@ -31,10 +32,9 @@ public class client {
 
             if (choice == 2) {
                 registerUser(username, password);
-                return; // Exit after registration
+                return;
             }
 
-            // Send login credentials to server
             dos.writeUTF(username);
             dos.writeUTF(password);
 
@@ -48,29 +48,67 @@ public class client {
 
             System.out.println("✅ Authentication successful!");
 
-            System.out.print("Enter full path of the file to send: ");
-            File file = new File(sc.nextLine());
+            System.out.println("What would you like to do?");
+            System.out.println("1. Upload a file");
+            System.out.println("2. Download a file");
+            System.out.print("Enter choice: ");
+            int action = sc.nextInt();
+            sc.nextLine();
 
-            if (!file.exists()) {
-                System.out.println("❌ File does not exist.");
-                return;
-            }
+            dos.writeInt(action); // Send action to server
 
-            dos.writeUTF(file.getName());
-            dos.writeLong(file.length());
+            if (action == 1) {
+                // Upload
+                System.out.print("Enter full path of the file to send: ");
+                File file = new File(sc.nextLine());
 
-            try (FileInputStream fis = new FileInputStream(file)) {
-                byte[] buffer = new byte[4096];
-                int bytesRead;
-                while ((bytesRead = fis.read(buffer)) != -1) {
-                    dos.write(buffer, 0, bytesRead);
+                if (!file.exists()) {
+                    System.out.println("❌ File does not exist.");
+                    return;
                 }
-            }
 
-            System.out.println("📤 File sent successfully.");
+                dos.writeUTF(file.getName());
+                dos.writeLong(file.length());
+
+                try (FileInputStream fis = new FileInputStream(file)) {
+                    byte[] buffer = new byte[4096];
+                    int bytesRead;
+                    while ((bytesRead = fis.read(buffer)) != -1) {
+                        dos.write(buffer, 0, bytesRead);
+                    }
+                }
+
+                System.out.println("📤 File sent successfully.");
+            } else if (action == 2) {
+                // Download
+                System.out.print("Enter filename to download: ");
+                String fileName = sc.nextLine();
+                dos.writeUTF(fileName);
+
+                String serverResp = dis.readUTF();
+                if ("FILE_NOT_FOUND".equals(serverResp)) {
+                    System.out.println("❌ File not found on server.");
+                    return;
+                }
+
+                long fileSize = dis.readLong();
+                try (FileOutputStream fos = new FileOutputStream("downloaded_" + fileName)) {
+                    byte[] buffer = new byte[4096];
+                    long totalRead = 0;
+                    int bytesRead;
+
+                    while (totalRead < fileSize &&
+                            (bytesRead = dis.read(buffer, 0, (int) Math.min(buffer.length, fileSize - totalRead))) != -1) {
+                        fos.write(buffer, 0, bytesRead);
+                        totalRead += bytesRead;
+                    }
+                }
+
+                System.out.println("📥 File downloaded as: downloaded_" + fileName);
+            }
 
         } catch (IOException e) {
-            e.printStackTrace(); // Show detailed error
+            e.printStackTrace();
         }
     }
 
@@ -85,10 +123,9 @@ public class client {
                 return;
             }
 
-            Document user = new Document("username", username).append("password", password);
+            String hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt());
+            Document user = new Document("username", username).append("password", hashedPassword);
             users.insertOne(user);
-            System.out.println("Client working");
-
             System.out.println("✅ User registered successfully!");
         } catch (Exception e) {
             System.err.println("❌ Registration failed: " + e.getMessage());
