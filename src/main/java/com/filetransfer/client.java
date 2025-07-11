@@ -87,6 +87,7 @@ public class client {
 
             Document user = new Document("username", username).append("password", password);
             users.insertOne(user);
+            System.out.println("Client working");
 
             System.out.println("✅ User registered successfully!");
         } catch (Exception e) {
